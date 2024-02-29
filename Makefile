@@ -10,6 +10,16 @@ ifeq ($(golint),)
 golint := $(shell go env GOPATH)/bin/golangci-lint
 endif
 
+protoc-gen-go := $(shell which protoc-gen-go)
+ifeq ($(protoc-gen-go),)
+protoc-gen-go := $(shell go env GOPATH)/bin/protoc-gen-go
+endif
+
+protoc-gen-connect-go := $(shell which protoc-gen-connect-go)
+ifeq ($(protoc-gen-connect-go),)
+protoc-gen-connect-go := $(shell go env GOPATH)/bin/protoc-gen-connect-go
+endif
+
 .PHONY: bin/distributed-systems-server
 bin/distributed-systems-server: $(GO_SRCS)
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "$@" ./cmd/server/main.go
@@ -21,6 +31,12 @@ unit:
 $(golint):
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
+$(protoc-gen-go):
+	go install google.golang.org/protobuf/cmd/protoc-gen-go
+
+$(protoc-gen-connect-go):
+	go install connectrpc.com/connect/cmd/protoc-gen-connect-go
+
 .PHONY: lint
 lint: $(golint)
 	$(golint) run ./...
@@ -28,6 +44,11 @@ lint: $(golint)
 .PHONY: clean
 clean:
 	rm -rf bin/
+
+.PHONY: protos
+protos: $(protoc-gen-go) $(protoc-gen-connect-go)
+	buf lint protos
+	buf generate protos
 
 .PHONY: version
 version:
