@@ -20,6 +20,11 @@ ifeq ($(protoc-gen-connect-go),)
 protoc-gen-connect-go := $(shell go env GOPATH)/bin/protoc-gen-connect-go
 endif
 
+buf := $(shell which buf)
+ifeq ($(buf),)
+buf := $(shell go env GOPATH)/bin/buf
+endif
+
 .PHONY: bin/distributed-systems-server
 bin/distributed-systems-server: $(GO_SRCS)
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "$@" ./cmd/server/main.go
@@ -37,6 +42,9 @@ $(protoc-gen-go):
 $(protoc-gen-connect-go):
 	go install connectrpc.com/connect/cmd/protoc-gen-connect-go
 
+$(buf):
+	go install github.com/bufbuild/buf/cmd/buf@latest
+
 .PHONY: lint
 lint: $(golint)
 	$(golint) run ./...
@@ -46,9 +54,9 @@ clean:
 	rm -rf bin/
 
 .PHONY: protos
-protos: $(protoc-gen-go) $(protoc-gen-connect-go)
-	buf lint protos
-	buf generate protos
+protos: $(protoc-gen-go) $(protoc-gen-connect-go) $(buf)
+	$(buf) lint protos
+	$(buf) generate protos
 
 .PHONY: version
 version:
