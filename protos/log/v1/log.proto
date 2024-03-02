@@ -2,6 +2,31 @@ syntax = "proto3";
 
 package log.v1;
 
+service LogAPI {
+  rpc Produce(ProduceRequest) returns (ProduceResponse);
+  rpc Consume(ConsumeRequest) returns (ConsumeResponse);
+  rpc ConsumeStream(ConsumeStreamRequest)
+      returns (stream ConsumeStreamResponse);
+  rpc ProduceStream(stream ProduceStreamRequest)
+      returns (stream ProduceStreamResponse);
+}
+
+message ProduceRequest { Record record = 1; }
+
+message ProduceResponse { uint64 offset = 1; }
+
+message ConsumeRequest { uint64 offset = 1; }
+
+message ConsumeResponse { Record record = 1; }
+
+message ProduceStreamRequest { Record record = 1; }
+
+message ProduceStreamResponse { uint64 offset = 1; }
+
+message ConsumeStreamRequest { uint64 offset = 1; }
+
+message ConsumeStreamResponse { Record record = 1; }
+
 message Record {
   bytes value = 1;
   uint64 offset = 2;

@@ -1,41 +1,126 @@
 package server
 
 import (
+	"context"
+	logv1 "distributed-systems/gen/log/v1"
+	"distributed-systems/gen/log/v1/logv1connect"
+	"distributed-systems/internal/log"
 	"errors"
-	"sync"
+	"io"
+	"net/http"
+
+	"connectrpc.com/connect"
 )
 
-var ErrOffsetNotFound = errors.New("offset not found")
-
-type Record struct {
-	Value  []byte `json:"value"`
-	Offset uint64 `json:"offset"`
+type Config struct {
+	CommitLog CommitLog
 }
 
-type Log struct {
-	mu     sync.Mutex
-	record []Record
+type CommitLog interface {
+	Append(*logv1.Record) (uint64, error)
+	Read(uint64) (*logv1.Record, error)
 }
 
-func NewLog() *Log {
-	return &Log{}
+var _ logv1connect.LogAPIHandler = (*LogAPIHandler)(nil)
+
+type LogAPIHandler struct {
+	*Config
 }
 
-func (l *Log) Append(record Record) (uint64, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	record.Offset = uint64(len(l.record))
-	l.record = append(l.record, record)
-	return record.Offset, nil
-}
-
-func (l *Log) Read(offset uint64) (Record, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if offset >= uint64(len(l.record)) {
-		return Record{}, ErrOffsetNotFound
+func NewLogAPIHandler(config *Config) (string, http.Handler) {
+	if config == nil {
+		panic("missing config")
 	}
-	return l.record[offset], nil
+	path, handler := logv1connect.NewLogAPIHandler(&LogAPIHandler{
+		Config: config,
+	})
+	return path, handler
+}
+
+func (s *LogAPIHandler) Consume(
+	_ context.Context,
+	req *connect.Request[logv1.ConsumeRequest],
+) (*connect.Response[logv1.ConsumeResponse], error) {
+	record, err := s.CommitLog.Read(req.Msg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	return &connect.Response[logv1.ConsumeResponse]{
+		Msg: &logv1.ConsumeResponse{
+			Record: record,
+		},
+	}, nil
+}
+
+func (s *LogAPIHandler) ConsumeStream(
+	ctx context.Context,
+	req *connect.Request[logv1.ConsumeStreamRequest],
+	stream *connect.ServerStream[logv1.ConsumeStreamResponse],
+) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			res, err := s.Consume(ctx, &connect.Request[logv1.ConsumeRequest]{
+				Msg: &logv1.ConsumeRequest{
+					Offset: req.Msg.Offset,
+				},
+			})
+			if errors.Is(err, &log.ErrOffsetOutOfRange{}) {
+				continue
+			} else if err != nil {
+				return connect.NewError(connect.CodeInternal, err)
+			}
+			if err := stream.Send(&logv1.ConsumeStreamResponse{
+				Record: res.Msg.Record,
+			}); err != nil {
+				return connect.NewError(connect.CodeInternal, err)
+			}
+			req.Msg.Offset++
+		}
+	}
+}
+
+func (s *LogAPIHandler) Produce(
+	_ context.Context,
+	req *connect.Request[logv1.ProduceRequest],
+) (*connect.Response[logv1.ProduceResponse], error) {
+	offset, err := s.CommitLog.Append(req.Msg.GetRecord())
+	if err != nil {
+		return nil, err
+	}
+	return &connect.Response[logv1.ProduceResponse]{
+		Msg: &logv1.ProduceResponse{
+			Offset: offset,
+		},
+	}, nil
+}
+
+func (s *LogAPIHandler) ProduceStream(
+	ctx context.Context,
+	stream *connect.BidiStream[logv1.ProduceStreamRequest, logv1.ProduceStreamResponse],
+) error {
+	for {
+		req, err := stream.Receive()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return connect.NewError(connect.CodeUnknown, err)
+		}
+		res, err := s.Produce(ctx, &connect.Request[logv1.ProduceRequest]{
+			Msg: &logv1.ProduceRequest{
+				Record: req.Record,
+			},
+		})
+		if err != nil {
+			return connect.NewError(connect.CodeInternal, err)
+		}
+		if err := stream.Send(&logv1.ProduceStreamResponse{
+			Offset: res.Msg.Offset,
+		}); err != nil {
+			return connect.NewError(connect.CodeInternal, err)
+		}
+	}
 }

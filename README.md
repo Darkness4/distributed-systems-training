@@ -6,6 +6,8 @@ For example:
 
 - Instead of using a 3rd party library for mmap, I used the `syscall` standard library.
 - Some error handling is done differently.
+- gRPC is replaced with Connect, an alternative to gRPC with gRPC-compatible APIs.
+- Buf as a standard to generate Protobuf and gRPC code.
 
 This training is a work in progress and will be updated as I progress through the book.
 
