@@ -21,17 +21,38 @@ var DefaultClient = &http.Client{
 	},
 }
 
-func NewTLSClient(crt, key, ca string) *http.Client {
-	cfg := &tls.Config{}
-	if err := SetupClientTLSConfig(crt, key, ca, cfg); err != nil {
+type Option func(*Options)
+
+type Options struct {
+	tlsConfig *tls.Config
+}
+
+func WithTLSConfig(cfg *tls.Config) Option {
+	return func(o *Options) {
+		o.tlsConfig = cfg
+	}
+}
+
+func WithTLS(crt, key, ca string) Option {
+	var cfg *tls.Config
+	var err error
+	cfg, err = SetupClientTLSConfig(crt, key, ca)
+	if err != nil {
 		slog.Error("failed to setup TLS", "tls", err)
 		cfg = nil
+	}
+	return WithTLSConfig(cfg)
+}
+
+func NewH2Client(opts ...Option) *http.Client {
+	var options Options
+	for _, o := range opts {
+		o(&options)
 	}
 	return &http.Client{
 		Transport: &http2.Transport{
 			AllowHTTP: true,
 			DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
-
 				if cfg == nil {
 					var d net.Dialer
 					return d.DialContext(ctx, network, addr)
@@ -40,36 +61,33 @@ func NewTLSClient(crt, key, ca string) *http.Client {
 				d.Config = cfg
 				return d.DialContext(ctx, network, addr)
 			},
-			TLSClientConfig: cfg,
+			TLSClientConfig: options.tlsConfig,
 		},
 	}
 }
 
 func SetupClientTLSConfig(
 	crt, key, ca string,
-	cfg *tls.Config,
-) error {
-	if cfg == nil {
-		return nil
-	}
+) (*tls.Config, error) {
+	cfg := &tls.Config{}
 	if crt != "" && key != "" {
 		certificate, err := tls.LoadX509KeyPair(crt, key)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		cfg.Certificates = append(cfg.Certificates, certificate)
 	}
 	if ca != "" {
 		cert, err := os.ReadFile(ca)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if cfg.RootCAs == nil {
 			cfg.RootCAs = x509.NewCertPool()
 		}
 		cfg.RootCAs.AppendCertsFromPEM(cert)
 	}
-	return nil
+	return cfg, nil
 }
 
 func SetupServerTLSConfig(

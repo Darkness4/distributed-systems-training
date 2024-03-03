@@ -39,16 +39,16 @@ func TestMain(m *testing.M) {
 }
 
 const (
-	rootClientCert   = "certs/root-client/tls.test.crt"
-	rootClientKey    = "certs/root-client/tls.test.key"
-	nobodyClientCert = "certs/nobody-client/tls.test.crt"
-	nobodyClientKey  = "certs/nobody-client/tls.test.key"
-	caCert           = "certs/ca/tls.test.crt"
-	serverCert       = "certs/server/tls.test.crt"
-	serverKey        = "certs/server/tls.test.key"
+	rootClientCert   = "../../test/certs/root-client/tls.test.crt"
+	rootClientKey    = "../../test/certs/root-client/tls.test.key"
+	nobodyClientCert = "../../test/certs/nobody-client/tls.test.crt"
+	nobodyClientKey  = "../../test/certs/nobody-client/tls.test.key"
+	caCert           = "../../test/certs/ca/tls.test.crt"
+	serverCert       = "../../test/certs/server/tls.test.crt"
+	serverKey        = "../../test/certs/server/tls.test.key"
 	serverName       = "localhost"
-	aclPolicyFile    = "acl/policy.csv"
-	aclModelFile     = "acl/model.conf"
+	aclPolicyFile    = "../../test/acl/policy.csv"
+	aclModelFile     = "../../test/acl/model.conf"
 )
 
 func TestServer(t *testing.T) {
@@ -148,14 +148,18 @@ func setupTest(t *testing.T) (
 		}
 	}()
 
-	rootHTTP := internalhttp.NewTLSClient(rootClientCert, rootClientKey, caCert)
+	rootHTTP := internalhttp.NewH2Client(
+		internalhttp.WithTLS(rootClientCert, rootClientKey, caCert),
+	)
 	rootClient = logv1connect.NewLogAPIClient(
 		rootHTTP,
 		"https://"+l.Addr().String(),
 		connect.WithGRPC(),
 	)
 
-	nobodyHTTP := internalhttp.NewTLSClient(nobodyClientCert, nobodyClientKey, caCert)
+	nobodyHTTP := internalhttp.NewH2Client(
+		internalhttp.WithTLS(nobodyClientCert, nobodyClientKey, caCert),
+	)
 	nobodyClient = logv1connect.NewLogAPIClient(
 		nobodyHTTP,
 		"https://"+l.Addr().String(),
@@ -224,7 +228,7 @@ func testConsumePastBoundary(
 	})
 	require.Nil(t, consume)
 	got := connect.CodeOf(err)
-	want := connect.CodeOf(WrapToConnectError(&log.ErrOffsetOutOfRange{}))
+	want := connect.CodeOf(WrapToConnectError(log.ErrOffsetOutOfRange{}))
 	require.Equal(t, want, got)
 }
 

@@ -5,7 +5,6 @@ import (
 	logv1 "distributed-systems/gen/log/v1"
 	"distributed-systems/gen/log/v1/logv1connect"
 	"distributed-systems/internal/log"
-	"errors"
 	"io"
 	"net/http"
 
@@ -70,9 +69,11 @@ func (s *LogAPIHandler) ConsumeStream(
 					Offset: req.Msg.Offset,
 				},
 			})
-			if errors.Is(err, &log.ErrOffsetOutOfRange{}) {
+			switch err.(type) {
+			case nil:
+			case log.ErrOffsetOutOfRange:
 				continue
-			} else if err != nil {
+			default:
 				return connect.NewError(connect.CodeInternal, err)
 			}
 			if err := stream.Send(&logv1.ConsumeStreamResponse{

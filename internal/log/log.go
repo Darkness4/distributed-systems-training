@@ -96,7 +96,7 @@ func (l *Log) Read(off uint64) (*logv1.Record, error) {
 		}
 	}
 	if s == nil || s.nextOffset <= off {
-		return nil, &ErrOffsetOutOfRange{Offset: off}
+		return nil, ErrOffsetOutOfRange{Offset: off}
 	}
 	return s.Read(off)
 }

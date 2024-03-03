@@ -1,5 +1,7 @@
 package log
 
+var _ error = ErrOffsetOutOfRange{}
+
 type ErrOffsetOutOfRange struct {
 	Offset uint64
 }

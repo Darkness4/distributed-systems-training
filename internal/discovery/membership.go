@@ -3,7 +3,6 @@ package discovery
 import (
 	"log/slog"
 	"net"
-	"strconv"
 
 	"github.com/hashicorp/serf/serf"
 )
@@ -55,7 +54,7 @@ func (m *Membership) setupSerf() error {
 	if err != nil {
 		return err
 	}
-	// TODO: check lifecycle
+	// Lifecycle of eventHandler is tied to the lifecycle of the membership.
 	go m.eventHandler()
 	if m.StartJoinAddresses != nil {
 		_, err = m.serf.Join(m.StartJoinAddresses, true)
@@ -67,21 +66,26 @@ func (m *Membership) setupSerf() error {
 }
 
 func (m *Membership) eventHandler() {
-	for e := range m.events {
-		switch e.EventType() {
-		case serf.EventMemberJoin:
-			for _, member := range e.(serf.MemberEvent).Members {
-				if m.isLocal(member) {
-					continue
+	for {
+		select {
+		case <-m.serf.ShutdownCh():
+			return
+		case e := <-m.events:
+			switch e.EventType() {
+			case serf.EventMemberJoin:
+				for _, member := range e.(serf.MemberEvent).Members {
+					if m.isLocal(member) {
+						continue
+					}
+					m.handleJoin(member)
 				}
-				m.handleJoin(member)
-			}
-		case serf.EventMemberLeave, serf.EventMemberFailed:
-			for _, member := range e.(serf.MemberEvent).Members {
-				if m.isLocal(member) {
-					continue
+			case serf.EventMemberLeave, serf.EventMemberFailed:
+				for _, member := range e.(serf.MemberEvent).Members {
+					if m.isLocal(member) {
+						continue
+					}
+					m.handleLeave(member)
 				}
-				m.handleLeave(member)
 			}
 		}
 	}
@@ -92,7 +96,7 @@ func (m *Membership) isLocal(member serf.Member) bool {
 }
 
 func (m *Membership) handleJoin(member serf.Member) {
-	if err := m.handler.Join(member.Name, net.JoinHostPort(member.Addr.String(), strconv.FormatUint(uint64(member.Port), 10))); err != nil {
+	if err := m.handler.Join(member.Name, member.Tags["rpc_addr"]); err != nil {
 		m.logger.Error("failed to handle join", "error", err, "member", member)
 	}
 }

@@ -42,7 +42,9 @@ func setupMembership(
 	c := discovery.Config{
 		NodeName:    fmt.Sprintf("%d", id),
 		BindAddress: addr,
-		Tags:        map[string]string{},
+		Tags: map[string]string{
+			"rpc_addr": addr,
+		},
 	}
 	h := &handler{}
 	if len(members) == 0 {
@@ -59,6 +61,7 @@ func setupMembership(
 	return members, h
 }
 
+// handler is a test implementation of discovery.Handler to send signals to the test.
 type handler struct {
 	joins  chan map[string]string
 	leaves chan string
