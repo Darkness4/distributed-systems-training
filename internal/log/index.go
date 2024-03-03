@@ -20,22 +20,19 @@ type index struct {
 	size uint64
 }
 
-func newIndex(f *os.File, c Config) *index {
-	if f == nil {
-		panic("nil file")
-	}
+func newIndex(f *os.File, c Config) (*index, error) {
 	idx := &index{
 		file: f,
 	}
 	fi, err := f.Stat()
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("stat: %w", err)
 	}
 	idx.size = uint64(fi.Size())
 
 	// Allocate the memory for the index.
 	if err = f.Truncate(int64(c.Segment.MaxIndexBytes)); err != nil {
-		panic(err)
+		return nil, err
 	}
 	if idx.mmap, err = syscall.Mmap(
 		int(f.Fd()),
@@ -44,9 +41,9 @@ func newIndex(f *os.File, c Config) *index {
 		syscall.PROT_READ|syscall.PROT_WRITE,
 		syscall.MAP_SHARED,
 	); err != nil {
-		panic(err)
+		return nil, fmt.Errorf("mmap: %w", err)
 	}
-	return idx
+	return idx, nil
 }
 
 func (i *index) Close() error {

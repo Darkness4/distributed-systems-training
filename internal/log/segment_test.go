@@ -23,7 +23,8 @@ func TestSegment(t *testing.T) {
 
 	want := &logv1.Record{Value: []byte("hello world")}
 
-	s := newSegment(dir, c.InitialOffset, c)
+	s, err := newSegment(dir, c.InitialOffset, c)
+	require.NoError(t, err)
 	require.Equal(t, uint64(16), s.nextOffset, s.nextOffset)
 	require.False(t, s.IsMaxed())
 
@@ -46,12 +47,14 @@ func TestSegment(t *testing.T) {
 	c.Segment.MaxStoreBytes = uint64(len(want.Value) * 3)
 	c.Segment.MaxIndexBytes = 1024
 
-	s = newSegment(dir, 16, c)
+	s, err = newSegment(dir, 16, c)
+	require.NoError(t, err)
 	// maxed store
 	require.True(t, s.IsMaxed())
 
 	err = s.Remove()
 	require.NoError(t, err)
-	s = newSegment(dir, 16, c)
+	s, err = newSegment(dir, 16, c)
+	require.NoError(t, err)
 	require.False(t, s.IsMaxed())
 }

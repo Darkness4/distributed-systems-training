@@ -80,7 +80,8 @@ func setupTest(t *testing.T) (
 	dir, err := os.MkdirTemp("", "server-test")
 	require.NoError(t, err)
 
-	clog := log.NewLog(dir, log.Config{})
+	clog, err := log.NewLog(dir, log.Config{})
+	require.NoError(t, err)
 	cfg := &Config{
 		CommitLog: clog,
 	}
@@ -123,7 +124,8 @@ func setupTest(t *testing.T) (
 	require.NoError(t, err)
 
 	// Authorizer
-	auth := auth.New(aclModelFile, aclPolicyFile)
+	auth, err := auth.New(aclModelFile, aclPolicyFile)
+	require.NoError(t, err)
 
 	r := http.NewServeMux()
 	path, handler := NewLogAPIHandler(

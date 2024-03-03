@@ -2,6 +2,7 @@ package log
 
 import (
 	logv1 "distributed-systems/gen/log/v1"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -20,23 +21,24 @@ type Log struct {
 	segments      []*segment
 }
 
-func NewLog(dir string, c Config) *Log {
+func NewLog(dir string, c Config) (*Log, error) {
 	if c.Segment.MaxIndexBytes == 0 {
 		c.Segment.MaxIndexBytes = 1024
 	}
 	if c.Segment.MaxStoreBytes == 0 {
 		c.Segment.MaxStoreBytes = 1024
 	}
-	return (&Log{
+	l := &Log{
 		Dir:    dir,
 		Config: c,
-	}).setup()
+	}
+	return l, l.setup()
 }
 
-func (l *Log) setup() *Log {
+func (l *Log) setup() error {
 	files, err := os.ReadDir(l.Dir)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("setup: %w", err)
 	}
 	var baseOffsets []uint64
 	for _, file := range files {
@@ -46,18 +48,26 @@ func (l *Log) setup() *Log {
 	}
 	slices.Sort(baseOffsets)
 	for _, off := range baseOffsets {
-		l.newSegment(off)
+		if err := l.newSegment(off); err != nil {
+			return err
+		}
 	}
 	if l.segments == nil {
-		l.newSegment(l.Config.Segment.InitialOffset)
+		if err := l.newSegment(l.Config.Segment.InitialOffset); err != nil {
+			return err
+		}
 	}
-	return l
+	return nil
 }
 
-func (l *Log) newSegment(off uint64) {
-	s := newSegment(l.Dir, off, l.Config)
+func (l *Log) newSegment(off uint64) error {
+	s, err := newSegment(l.Dir, off, l.Config)
+	if err != nil {
+		return err
+	}
 	l.segments = append(l.segments, s)
 	l.activeSegment = s
+	return nil
 }
 
 func (l *Log) Append(record *logv1.Record) (uint64, error) {
@@ -68,7 +78,9 @@ func (l *Log) Append(record *logv1.Record) (uint64, error) {
 		return 0, err
 	}
 	if l.activeSegment.IsMaxed() {
-		l.newSegment(off + 1)
+		if err := l.newSegment(off + 1); err != nil {
+			return 0, err
+		}
 	}
 	return off, nil
 }
@@ -111,8 +123,7 @@ func (l *Log) Reset() error {
 	if err := l.Remove(); err != nil {
 		return err
 	}
-	_ = l.setup()
-	return nil
+	return l.setup()
 }
 
 func (l *Log) LowestOffset() (uint64, error) {

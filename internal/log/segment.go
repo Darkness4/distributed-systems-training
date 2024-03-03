@@ -16,7 +16,7 @@ type segment struct {
 	config                 Config
 }
 
-func newSegment(dir string, baseOffset uint64, c Config) *segment {
+func newSegment(dir string, baseOffset uint64, c Config) (*segment, error) {
 	s := segment{
 		baseOffset: baseOffset,
 		config:     c,
@@ -27,25 +27,31 @@ func newSegment(dir string, baseOffset uint64, c Config) *segment {
 		0644,
 	)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("open store: %w", err)
 	}
-	s.store = newStore(storeFile)
+	s.store, err = newStore(storeFile)
+	if err != nil {
+		return nil, fmt.Errorf("new store: %w", err)
+	}
 	indexFile, err := os.OpenFile(
 		path.Join(dir, fmt.Sprintf("%d.index", baseOffset)),
 		os.O_CREATE|os.O_RDWR,
 		0644,
 	)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("open index: %w", err)
 	}
-	s.index = newIndex(indexFile, c)
+	s.index, err = newIndex(indexFile, c)
+	if err != nil {
+		return nil, fmt.Errorf("new index: %w", err)
+	}
 	if off, _, err := s.index.Read(-1); err != nil {
 		s.nextOffset = baseOffset
 	} else {
 		s.nextOffset = baseOffset + uint64(off) + 1
 	}
 
-	return &s
+	return &s, nil
 }
 
 func (s *segment) Append(record *logv1.Record) (uint64, error) {

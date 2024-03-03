@@ -3,6 +3,7 @@ package log
 import (
 	"bufio"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"sync"
 )
@@ -22,16 +23,16 @@ type store struct {
 	size uint64
 }
 
-func newStore(f *os.File) *store {
+func newStore(f *os.File) (*store, error) {
 	fi, err := f.Stat()
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("stat: %w", err)
 	}
 	return &store{
 		File: f,
 		buf:  bufio.NewWriter(f),
 		size: uint64(fi.Size()),
-	}
+	}, nil
 }
 
 // Append writes the record to the store and returns the position at which the record was written.

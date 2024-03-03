@@ -15,7 +15,11 @@ func prepareIndex(c Config) *index {
 		panic(err)
 	}
 
-	return newIndex(f, c)
+	idx, err := newIndex(f, c)
+	if err != nil {
+		panic(err)
+	}
+	return idx
 }
 
 func TestIndex(t *testing.T) {
@@ -58,7 +62,8 @@ func TestIndex(t *testing.T) {
 	// index should build its state from the existing file
 	f, err := os.OpenFile(fname, os.O_RDWR, 0600)
 	require.NoError(t, err)
-	idx = newIndex(f, config)
+	idx, err = newIndex(f, config)
+	require.NoError(t, err)
 	defer idx.Close()
 	require.NoError(t, err)
 	off, pos, err := idx.Read(-1)

@@ -20,7 +20,11 @@ func prepareStore() *store {
 		panic(err)
 	}
 
-	return newStore(f)
+	store, err := newStore(f)
+	if err != nil {
+		panic(err)
+	}
+	return store
 }
 
 func deleteStore(s *store) {

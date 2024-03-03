@@ -95,7 +95,10 @@ var app = &cli.App{
 
 		// ACL
 		if aclModelFile != "" && aclPolicyFile != "" {
-			auth := auth.New(aclModelFile, aclPolicyFile)
+			auth, err := auth.New(aclModelFile, aclPolicyFile)
+			if err != nil {
+				return err
+			}
 			interceptors = append(interceptors, auth.Interceptor())
 		}
 

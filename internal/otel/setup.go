@@ -13,6 +13,8 @@ import (
 
 // SetupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
+//
+//nolint:ireturn
 func SetupOTelSDK(
 	ctx context.Context,
 	metricExporter metric.Exporter,
@@ -68,6 +70,7 @@ func SetupOTelSDK(
 	return
 }
 
+//nolint:ireturn
 func newPropagator() propagation.TextMapPropagator {
 	return propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},

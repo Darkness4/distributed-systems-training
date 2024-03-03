@@ -4,6 +4,7 @@ import (
 	"context"
 	"distributed-systems/internal/http"
 	"errors"
+	"fmt"
 
 	"connectrpc.com/connect"
 	"github.com/casbin/casbin/v2"
@@ -13,14 +14,14 @@ type Authorizer struct {
 	enforcer *casbin.Enforcer
 }
 
-func New(model, policy string) *Authorizer {
+func New(model, policy string) (*Authorizer, error) {
 	enf, err := casbin.NewEnforcer(model, policy)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to create enforcer: %w", err)
 	}
 	return &Authorizer{
 		enforcer: enf,
-	}
+	}, err
 }
 
 func (a *Authorizer) Enforce(sub, obj, act string) (bool, error) {
