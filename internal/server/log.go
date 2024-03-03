@@ -41,7 +41,7 @@ func NewLogAPIHandler(config *Config, opts ...connect.HandlerOption) (string, ht
 }
 
 func (s *LogAPIHandler) Consume(
-	ctx context.Context,
+	_ context.Context,
 	req *connect.Request[logv1.ConsumeRequest],
 ) (*connect.Response[logv1.ConsumeResponse], error) {
 	record, err := s.CommitLog.Read(req.Msg.Offset)
@@ -86,7 +86,7 @@ func (s *LogAPIHandler) ConsumeStream(
 }
 
 func (s *LogAPIHandler) Produce(
-	ctx context.Context,
+	_ context.Context,
 	req *connect.Request[logv1.ProduceRequest],
 ) (*connect.Response[logv1.ProduceResponse], error) {
 	offset, err := s.CommitLog.Append(req.Msg.GetRecord())

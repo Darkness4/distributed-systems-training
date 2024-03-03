@@ -1,16 +1,21 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"distributed-systems/internal/auth"
 	internalhttp "distributed-systems/internal/http"
+	"distributed-systems/internal/otel"
 	"distributed-systems/internal/server"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
 
 	"connectrpc.com/connect"
+	"connectrpc.com/otelconnect"
 	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/net/http2"
@@ -77,13 +82,41 @@ var app = &cli.App{
 			Destination: &aclPolicyFile,
 		},
 	},
-	Action: func(_ *cli.Context) error {
+	Action: func(c *cli.Context) error {
+		ctx := c.Context
 		opts := []connect.HandlerOption{}
+		interceptors := []connect.Interceptor{}
+
+		// Handle SIGINT (CTRL+C) gracefully.
+		ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+		defer stop()
+
+		// ACL
 		if aclModelFile != "" && aclPolicyFile != "" {
 			auth := auth.New(aclModelFile, aclPolicyFile)
-			opts = append(opts, connect.WithInterceptors(auth.Interceptor()))
+			interceptors = append(interceptors, auth.Interceptor())
 		}
 
+		// OTEL
+		traceProvider, meterProvider, prop, otelShutdown, err := otel.SetupOTelSDK(ctx, nil, nil)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			_ = otelShutdown(ctx)
+		}()
+		otel, err := otelconnect.NewInterceptor(
+			otelconnect.WithTracerProvider(traceProvider),
+			otelconnect.WithMeterProvider(meterProvider),
+			otelconnect.WithPropagator(prop),
+		)
+		if err != nil {
+			return err
+		}
+		interceptors = append(interceptors, otel)
+
+		// Routes
+		opts = append(opts, connect.WithInterceptors(interceptors...))
 		r := http.NewServeMux()
 		path, handler := server.NewLogAPIHandler(
 			&server.Config{},
@@ -91,6 +124,7 @@ var app = &cli.App{
 		)
 		r.Handle(path, handler)
 
+		// TLS
 		slog.Info("Server started", "address", listenAddress, "tls", crt != "")
 		tlsConfig := &tls.Config{}
 		if err := internalhttp.SetupServerTLSConfig(crt, key, ca, serverName, tlsConfig); err != nil {
@@ -98,11 +132,36 @@ var app = &cli.App{
 			tlsConfig = nil
 		}
 
+		// Server
 		l, err := tls.Listen("tcp", ":0", tlsConfig)
 		if err != nil {
 			return err
 		}
-		return http.Serve(l, internalhttp.AuthMiddleware(h2c.NewHandler(r, &http2.Server{})))
+		srv := &http.Server{
+			BaseContext: func(_ net.Listener) context.Context { return ctx },
+			Handler:     internalhttp.AuthMiddleware(h2c.NewHandler(r, &http2.Server{})),
+		}
+		defer func() {
+			_ = srv.Shutdown(ctx)
+			_ = l.Close()
+			slog.Info("Server stopped")
+		}()
+		srvErr := make(chan error, 1)
+		go func() {
+			srvErr <- srv.Serve(l)
+		}()
+
+		// Wait for interruption.
+		select {
+		case err = <-srvErr:
+			// Error when starting HTTP server.
+			return err
+		case <-ctx.Done():
+			// Wait for first CTRL+C.
+			// Stop receiving signal notifications as soon as possible.
+			stop()
+		}
+		return nil
 	},
 }
 

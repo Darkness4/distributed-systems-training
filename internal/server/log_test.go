@@ -8,17 +8,35 @@ import (
 	"distributed-systems/internal/auth"
 	internalhttp "distributed-systems/internal/http"
 	"distributed-systems/internal/log"
+	"distributed-systems/internal/otel"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
+	"connectrpc.com/otelconnect"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/trace"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
+
+var debug = flag.Bool("debug", false, "Enable observability for debugging")
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if *debug {
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+	}
+	os.Exit(m.Run())
+}
 
 const (
 	rootClientCert   = "certs/root-client/tls.test.crt"
@@ -76,10 +94,46 @@ func setupTest(t *testing.T) (
 	l, err := tls.Listen("tcp", "localhost:0", tlsConfig)
 	require.NoError(t, err)
 
+	// OTEL
+	var metricExporter metric.Exporter
+	var traceExporter trace.SpanExporter
+	if *debug {
+		metricsLogFile, err := os.Create(fmt.Sprintf("metrics-%d.log", time.Now().UnixMilli()))
+		require.NoError(t, err)
+		metricExporter, err = stdoutmetric.New(stdoutmetric.WithWriter(metricsLogFile))
+		require.NoError(t, err)
+
+		tracesLogFile, err := os.Create(fmt.Sprintf("trace-%d.log", time.Now().UnixMilli()))
+		require.NoError(t, err)
+		traceExporter, err = stdouttrace.New(stdouttrace.WithWriter(tracesLogFile))
+		require.NoError(t, err)
+	}
+
+	traceProvider, meterProvider, prop, otelShutdown, err := otel.SetupOTelSDK(
+		context.Background(),
+		metricExporter,
+		traceExporter,
+	)
+	require.NoError(t, err)
+	otel, err := otelconnect.NewInterceptor(
+		otelconnect.WithTracerProvider(traceProvider),
+		otelconnect.WithMeterProvider(meterProvider),
+		otelconnect.WithPropagator(prop),
+	)
+	require.NoError(t, err)
+
+	// Authorizer
 	auth := auth.New(aclModelFile, aclPolicyFile)
 
 	r := http.NewServeMux()
-	path, handler := NewLogAPIHandler(cfg, connect.WithInterceptors(auth.Interceptor()))
+	path, handler := NewLogAPIHandler(
+		cfg,
+		connect.WithInterceptors(
+			auth.Interceptor(),
+			LoggingInterceptor(*slog.With("component", "server")),
+			otel,
+		),
+	)
 	r.Handle(path, handler)
 	require.NoError(t, err)
 
@@ -110,6 +164,12 @@ func setupTest(t *testing.T) (
 		_ = srv.Shutdown(context.Background())
 		_ = l.Close()
 		_ = clog.Remove()
+		_ = otelShutdown(context.Background())
+		if metricExporter != nil && traceExporter != nil {
+			time.Sleep(1500 * time.Millisecond)
+			_ = metricExporter.Shutdown(context.Background())
+			_ = traceExporter.Shutdown(context.Background())
+		}
 	}
 }
 
