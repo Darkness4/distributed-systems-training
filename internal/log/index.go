@@ -80,7 +80,6 @@ func (i *index) Read(in int64) (out uint32, pos uint64, err error) {
 		return 0, 0, io.EOF
 	}
 	// 4 bytes for the offset and 8 bytes for the position.
-	fmt.Println(len(i.mmap), pos, pos+offWidth)
 	out = enc.Uint32(i.mmap[pos : pos+offWidth])
 	pos = enc.Uint64(i.mmap[pos+offWidth : pos+entryWidth])
 	return out, pos, nil

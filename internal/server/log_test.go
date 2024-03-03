@@ -2,12 +2,14 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	logv1 "distributed-systems/gen/log/v1"
 	"distributed-systems/gen/log/v1/logv1connect"
+	"distributed-systems/internal/auth"
 	internalhttp "distributed-systems/internal/http"
 	"distributed-systems/internal/log"
 	"fmt"
-	"net"
+	"log/slog"
 	"net/http"
 	"os"
 	"testing"
@@ -18,32 +20,44 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
+const (
+	rootClientCert   = "certs/root-client/tls.test.crt"
+	rootClientKey    = "certs/root-client/tls.test.key"
+	nobodyClientCert = "certs/nobody-client/tls.test.crt"
+	nobodyClientKey  = "certs/nobody-client/tls.test.key"
+	caCert           = "certs/ca/tls.test.crt"
+	serverCert       = "certs/server/tls.test.crt"
+	serverKey        = "certs/server/tls.test.key"
+	serverName       = "localhost"
+	aclPolicyFile    = "acl/policy.csv"
+	aclModelFile     = "acl/model.conf"
+)
+
 func TestServer(t *testing.T) {
 	for scenario, fn := range map[string]func(
 		t *testing.T,
-		client logv1connect.LogAPIClient,
+		rootClient, nobodyClient logv1connect.LogAPIClient,
 	){
 		"produce/consume a message to/from the log succeeeds": testProduceConsume,
 		"produce/consume stream succeeds":                     testProduceConsumeStream,
 		"consume past log boundary fails":                     testConsumePastBoundary,
+		"unauthorized fails":                                  testUnauthorized,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			fmt.Println("Running test: ", scenario)
-			client, teardown := setupTest(t)
+			rootClient, nobodyClient, teardown := setupTest(t)
 			defer teardown()
-			fn(t, client)
+			fn(t, rootClient, nobodyClient)
 		})
 	}
 }
 
+// nolint: ireturn
 func setupTest(t *testing.T) (
-	client logv1connect.LogAPIClient,
+	rootClient, nobodyClient logv1connect.LogAPIClient,
 	teardown func(),
 ) {
 	t.Helper()
-
-	l, err := net.Listen("tcp", ":0")
-	require.NoError(t, err)
 
 	dir, err := os.MkdirTemp("", "server-test")
 	require.NoError(t, err)
@@ -53,12 +67,24 @@ func setupTest(t *testing.T) (
 		CommitLog: clog,
 	}
 
+	tlsConfig := &tls.Config{}
+	if err := internalhttp.SetupServerTLSConfig(serverCert, serverKey, caCert, serverName, tlsConfig); err != nil {
+		slog.Error("error setting up tls", "error", err)
+		tlsConfig = nil
+	}
+
+	l, err := tls.Listen("tcp", "localhost:0", tlsConfig)
+	require.NoError(t, err)
+
+	auth := auth.New(aclModelFile, aclPolicyFile)
+
 	r := http.NewServeMux()
-	path, handler := NewLogAPIHandler(cfg)
+	path, handler := NewLogAPIHandler(cfg, connect.WithInterceptors(auth.Interceptor()))
 	r.Handle(path, handler)
 	require.NoError(t, err)
-	srv := http.Server{
-		Handler: h2c.NewHandler(r, &http2.Server{}),
+
+	srv := &http.Server{
+		Handler: internalhttp.AuthMiddleware(h2c.NewHandler(r, &http2.Server{})),
 	}
 	go func() {
 		if err := srv.Serve(l); err != http.ErrServerClosed {
@@ -66,27 +92,35 @@ func setupTest(t *testing.T) (
 		}
 	}()
 
-	client = logv1connect.NewLogAPIClient(
-		internalhttp.DefaultClient,
-		"http://"+l.Addr().String(),
+	rootHTTP := internalhttp.NewTLSClient(rootClientCert, rootClientKey, caCert)
+	rootClient = logv1connect.NewLogAPIClient(
+		rootHTTP,
+		"https://"+l.Addr().String(),
 		connect.WithGRPC(),
 	)
 
-	return client, func() {
+	nobodyHTTP := internalhttp.NewTLSClient(nobodyClientCert, nobodyClientKey, caCert)
+	nobodyClient = logv1connect.NewLogAPIClient(
+		nobodyHTTP,
+		"https://"+l.Addr().String(),
+		connect.WithGRPC(),
+	)
+
+	return rootClient, nobodyClient, func() {
 		_ = srv.Shutdown(context.Background())
-		l.Close()
-		clog.Remove()
+		_ = l.Close()
+		_ = clog.Remove()
 	}
 }
 
-func testProduceConsume(t *testing.T, client logv1connect.LogAPIClient) {
+func testProduceConsume(t *testing.T, rootClient, _ logv1connect.LogAPIClient) {
 	ctx := context.Background()
 
 	want := &logv1.Record{
 		Value: []byte("hello world"),
 	}
 
-	produce, err := client.Produce(
+	produce, err := rootClient.Produce(
 		ctx,
 		&connect.Request[logv1.ProduceRequest]{
 			Msg: &logv1.ProduceRequest{
@@ -96,7 +130,7 @@ func testProduceConsume(t *testing.T, client logv1connect.LogAPIClient) {
 	)
 	require.NoError(t, err)
 
-	consume, err := client.Consume(ctx, &connect.Request[logv1.ConsumeRequest]{
+	consume, err := rootClient.Consume(ctx, &connect.Request[logv1.ConsumeRequest]{
 		Msg: &logv1.ConsumeRequest{
 			Offset: produce.Msg.Offset,
 		},
@@ -108,11 +142,11 @@ func testProduceConsume(t *testing.T, client logv1connect.LogAPIClient) {
 
 func testConsumePastBoundary(
 	t *testing.T,
-	client logv1connect.LogAPIClient,
+	rootClient, _ logv1connect.LogAPIClient,
 ) {
 	ctx := context.Background()
 
-	produce, err := client.Produce(ctx, &connect.Request[logv1.ProduceRequest]{
+	produce, err := rootClient.Produce(ctx, &connect.Request[logv1.ProduceRequest]{
 		Msg: &logv1.ProduceRequest{
 			Record: &logv1.Record{
 				Value: []byte("hello world"),
@@ -121,24 +155,20 @@ func testConsumePastBoundary(
 	})
 	require.NoError(t, err)
 
-	consume, err := client.Consume(ctx, &connect.Request[logv1.ConsumeRequest]{
+	consume, err := rootClient.Consume(ctx, &connect.Request[logv1.ConsumeRequest]{
 		Msg: &logv1.ConsumeRequest{
 			Offset: produce.Msg.Offset + 1,
 		},
 	})
-	if consume != nil {
-		t.Fatal("consume not nil")
-	}
+	require.Nil(t, consume)
 	got := connect.CodeOf(err)
-	want := connect.CodeOf(log.WrapToConnectError(log.ErrOffsetOutOfRange{}))
-	if got != want {
-		t.Fatalf("got err: %v, want: %v", got, want)
-	}
+	want := connect.CodeOf(WrapToConnectError(&log.ErrOffsetOutOfRange{}))
+	require.Equal(t, want, got)
 }
 
 func testProduceConsumeStream(
 	t *testing.T,
-	client logv1connect.LogAPIClient,
+	rootClient, _ logv1connect.LogAPIClient,
 ) {
 	ctx := context.Background()
 
@@ -151,8 +181,7 @@ func testProduceConsumeStream(
 	}}
 
 	{
-		fmt.Println("ProduceStream")
-		stream := client.ProduceStream(ctx)
+		stream := rootClient.ProduceStream(ctx)
 
 		for offset, record := range records {
 			err := stream.Send(&logv1.ProduceStreamRequest{
@@ -161,19 +190,12 @@ func testProduceConsumeStream(
 			require.NoError(t, err)
 			res, err := stream.Receive()
 			require.NoError(t, err)
-			if res.Offset != uint64(offset) {
-				t.Fatalf(
-					"got offset: %d, want: %d",
-					res.Offset,
-					offset,
-				)
-			}
+			require.Equal(t, res.Offset, uint64(offset))
 		}
 	}
 
 	{
-		fmt.Println("ConsumeStream")
-		stream, err := client.ConsumeStream(
+		stream, err := rootClient.ConsumeStream(
 			ctx,
 			&connect.Request[logv1.ConsumeStreamRequest]{
 				Msg: &logv1.ConsumeStreamRequest{
@@ -192,4 +214,31 @@ func testProduceConsumeStream(
 			})
 		}
 	}
+}
+
+func testUnauthorized(
+	t *testing.T,
+	_, nobodyClient logv1connect.LogAPIClient,
+) {
+	ctx := context.Background()
+	produce, err := nobodyClient.Produce(ctx,
+		&connect.Request[logv1.ProduceRequest]{
+			Msg: &logv1.ProduceRequest{
+				Record: &logv1.Record{
+					Value: []byte("hello world"),
+				},
+			},
+		},
+	)
+	require.Nil(t, produce)
+	got, want := connect.CodeOf(err), connect.CodePermissionDenied
+	require.Equal(t, want, got)
+	consume, err := nobodyClient.Consume(ctx, &connect.Request[logv1.ConsumeRequest]{
+		Msg: &logv1.ConsumeRequest{
+			Offset: 0,
+		},
+	})
+	require.Nil(t, consume)
+	got, want = connect.CodeOf(err), connect.CodePermissionDenied
+	require.Equal(t, want, got)
 }

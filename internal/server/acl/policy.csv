@@ -1,0 +1,4 @@
+p, root, *, /log.v1.LogAPI/Produce
+p, root, *, /log.v1.LogAPI/Consume
+p, root, *, /log.v1.LogAPI/ConsumeStream
+p, root, *, /log.v1.LogAPI/ProduceStream
