@@ -130,7 +130,7 @@ func setupTest(t *testing.T) (
 		cfg,
 		connect.WithInterceptors(
 			auth.Interceptor(),
-			LoggingInterceptor(*slog.With("component", "server")),
+			LoggingInterceptor(slog.With("component", "server")),
 			otel,
 		),
 	)

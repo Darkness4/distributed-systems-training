@@ -85,7 +85,9 @@ var app = &cli.App{
 	Action: func(c *cli.Context) error {
 		ctx := c.Context
 		opts := []connect.HandlerOption{}
-		interceptors := []connect.Interceptor{}
+		interceptors := []connect.Interceptor{
+			server.LoggingInterceptor(slog.With("component", "server")),
+		}
 
 		// Handle SIGINT (CTRL+C) gracefully.
 		ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
