@@ -23,7 +23,7 @@ func TestSegment(t *testing.T) {
 
 	want := &logv1.Record{Value: []byte("hello world")}
 
-	s, err := newSegment(dir, c.InitialOffset, c)
+	s, err := newSegment(dir, c.Segment.InitialOffset, c)
 	require.NoError(t, err)
 	require.Equal(t, uint64(16), s.nextOffset, s.nextOffset)
 	require.False(t, s.IsMaxed())

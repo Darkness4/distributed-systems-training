@@ -7,7 +7,9 @@ import (
 	"distributed-systems/gen/log/v1/logv1connect"
 	"distributed-systems/internal/agent"
 	internalhttp "distributed-systems/internal/http"
+	"distributed-systems/internal/log"
 	"distributed-systems/internal/net"
+	"distributed-systems/internal/server"
 	"fmt"
 	"os"
 	"testing"
@@ -42,6 +44,7 @@ func TestAgent(t *testing.T) {
 		peerClientCert,
 		peerClientKey,
 		caCert,
+		serverName,
 	)
 	require.NoError(t, err)
 
@@ -74,6 +77,7 @@ func TestAgent(t *testing.T) {
 			ACLPolicyFile:      aclPolicyFile,
 			ServerTLSConfig:    &serverTLSConfig,
 			PeerTLSConfig:      peerTLSConfig,
+			Bootstrap:          i == 0,
 		})
 		require.NoError(t, err)
 
@@ -127,6 +131,20 @@ func TestAgent(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, consumeResponse.Msg.Record.Value, []byte("foo"))
+
+	consumeResponse, err = leaderClient.Consume(
+		context.Background(),
+		&connect.Request[logv1.ConsumeRequest]{
+			Msg: &logv1.ConsumeRequest{
+				Offset: produceResponse.Msg.Offset + 1,
+			},
+		},
+	)
+	require.Nil(t, consumeResponse)
+	require.Error(t, err)
+	got := connect.CodeOf(err)
+	want := connect.CodeOf(server.WrapToConnectError(log.ErrOffsetOutOfRange{}))
+	require.Equal(t, want, got)
 }
 
 func client(

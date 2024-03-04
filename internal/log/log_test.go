@@ -51,7 +51,7 @@ func testAppendRead(t *testing.T, log *Log) {
 func testOutOfRangeErr(t *testing.T, log *Log) {
 	read, err := log.Read(1)
 	require.Nil(t, read)
-	var errOOR *ErrOffsetOutOfRange
+	var errOOR ErrOffsetOutOfRange
 	require.ErrorAs(t, err, &errOOR)
 	require.Equal(t, uint64(1), errOOR.Offset)
 }
@@ -97,7 +97,7 @@ func testReader(t *testing.T, log *Log) {
 	require.NoError(t, err)
 
 	read := &logv1.Record{}
-	err = proto.Unmarshal(b[lenWidth:], read)
+	err = proto.Unmarshal(b[LenWidth:], read)
 	require.NoError(t, err)
 	require.Equal(t, r.Value, read.Value)
 }

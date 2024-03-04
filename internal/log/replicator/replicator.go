@@ -5,7 +5,6 @@ import (
 	logv1 "distributed-systems/gen/log/v1"
 	"distributed-systems/gen/log/v1/logv1connect"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 )
 
+// Replicator is deprecated over distributed.Log.
 type Replicator struct {
 	LocalServer logv1connect.LogAPIClient
 	HTTP        *http.Client
@@ -68,7 +68,6 @@ func (r *Replicator) replicate(addr string, leave chan struct{}) {
 	records := make(chan *logv1.Record, 16)
 	go func() {
 		for stream.Receive() {
-			fmt.Println("produce", stream.Msg())
 			records <- stream.Msg().Record
 		}
 		if err := stream.Err(); err != nil && !errors.Is(err, io.EOF) &&

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net"
 
+	"github.com/hashicorp/raft"
 	"github.com/hashicorp/serf/serf"
 )
 
@@ -97,13 +98,13 @@ func (m *Membership) isLocal(member serf.Member) bool {
 
 func (m *Membership) handleJoin(member serf.Member) {
 	if err := m.handler.Join(member.Name, member.Tags["rpc_addr"]); err != nil {
-		m.logger.Error("failed to handle join", "error", err, "member", member)
+		m.logError("failed to handle join", err, member)
 	}
 }
 
 func (m *Membership) handleLeave(member serf.Member) {
 	if err := m.handler.Leave(member.Name); err != nil {
-		m.logger.Error("failed to handle leave", "error", err, "member", member)
+		m.logError("failed to handle leave", err, member)
 	}
 }
 
@@ -113,4 +114,12 @@ func (m *Membership) Members() []serf.Member {
 
 func (m *Membership) Leave() error {
 	return m.serf.Leave()
+}
+
+func (m *Membership) logError(msg string, err error, member serf.Member) {
+	log := m.logger.Error
+	if err == raft.ErrNotLeader {
+		log = m.logger.Debug
+	}
+	log(msg, "error", err, "member", member)
 }

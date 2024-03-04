@@ -77,8 +77,8 @@ func (i *index) Read(in int64) (out uint32, pos uint64, err error) {
 		return 0, 0, io.EOF
 	}
 	// 4 bytes for the offset and 8 bytes for the position.
-	out = enc.Uint32(i.mmap[pos : pos+offWidth])
-	pos = enc.Uint64(i.mmap[pos+offWidth : pos+entryWidth])
+	out = Encoding.Uint32(i.mmap[pos : pos+offWidth])
+	pos = Encoding.Uint64(i.mmap[pos+offWidth : pos+entryWidth])
 	return out, pos, nil
 }
 
@@ -87,8 +87,8 @@ func (i *index) Write(off uint32, pos uint64) error {
 		return io.EOF
 	}
 	// 4 bytes for the offset and 8 bytes for the position.
-	enc.PutUint32(i.mmap[i.size:i.size+offWidth], off)
-	enc.PutUint64(i.mmap[i.size+offWidth:i.size+entryWidth], pos)
+	Encoding.PutUint32(i.mmap[i.size:i.size+offWidth], off)
+	Encoding.PutUint64(i.mmap[i.size+offWidth:i.size+entryWidth], pos)
 	i.size += entryWidth
 	return nil
 }

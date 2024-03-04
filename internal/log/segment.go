@@ -56,6 +56,7 @@ func newSegment(dir string, baseOffset uint64, c Config) (*segment, error) {
 
 func (s *segment) Append(record *logv1.Record) (uint64, error) {
 	cur := s.nextOffset
+	record.Offset = cur
 	p, err := proto.Marshal(record)
 	if err != nil {
 		return 0, err

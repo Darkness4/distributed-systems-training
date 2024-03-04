@@ -10,7 +10,7 @@ import (
 // Fixtures for the packed data.
 var (
 	write = []byte("write")
-	width = uint64(lenWidth + len(write))
+	width = uint64(LenWidth + len(write))
 )
 
 func prepareStore() *store {
@@ -69,14 +69,14 @@ func testReadAt(t *testing.T, s *store) {
 	t.Helper()
 	for i, off := uint64(1), int64(0); i < 4; i++ {
 		// Read size
-		b := make([]byte, lenWidth)
+		b := make([]byte, LenWidth)
 		n, err := s.ReadAt(b, off)
 		require.NoError(t, err)
-		require.Equal(t, lenWidth, n)
+		require.Equal(t, LenWidth, n)
 		off += int64(n)
 
 		// Read record
-		size := enc.Uint64(b)
+		size := Encoding.Uint64(b)
 		b = make([]byte, size)
 		n, err = s.ReadAt(b, off)
 		require.NoError(t, err)

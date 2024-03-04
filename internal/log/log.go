@@ -13,7 +13,8 @@ import (
 )
 
 type Log struct {
-	mu  sync.RWMutex
+	mu sync.RWMutex
+
 	Dir string
 	Config
 
@@ -47,10 +48,13 @@ func (l *Log) setup() error {
 		baseOffsets = append(baseOffsets, off)
 	}
 	slices.Sort(baseOffsets)
-	for _, off := range baseOffsets {
-		if err := l.newSegment(off); err != nil {
+	for i := 0; i < len(baseOffsets); i++ {
+		if err = l.newSegment(baseOffsets[i]); err != nil {
 			return err
 		}
+		// baseOffset contains dup for index and store so we skip
+		// the dup
+		i++
 	}
 	if l.segments == nil {
 		if err := l.newSegment(l.Config.Segment.InitialOffset); err != nil {

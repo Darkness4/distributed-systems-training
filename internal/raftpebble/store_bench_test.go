@@ -126,7 +126,7 @@ func BenchmarkSet(b *testing.B) {
 		os.RemoveAll(dir)
 	}()
 	for n := 0; n < b.N; n++ {
-		store.Set(uint64ToBytes(uint64(n)), []byte("val"))
+		_ = store.Set(uint64ToBytes(uint64(n)), []byte("val"))
 	}
 }
 
@@ -139,12 +139,12 @@ func BenchmarkGet(b *testing.B) {
 	}()
 
 	for n := 0; n < b.N; n++ {
-		store.Set(uint64ToBytes(uint64(n)), []byte("val"))
+		_ = store.Set(uint64ToBytes(uint64(n)), []byte("val"))
 	}
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		store.Get(uint64ToBytes(uint64(n)))
+		_, _ = store.Get(uint64ToBytes(uint64(n)))
 	}
 }
 
@@ -157,7 +157,7 @@ func BenchmarkStoreLogs(b *testing.B) {
 	}()
 
 	for n := 0; n < b.N; n++ {
-		store.StoreLogs([]*raft.Log{
+		_ = store.StoreLogs([]*raft.Log{
 			{
 				Index: uint64(n),
 				Term:  uint64(n),
@@ -175,7 +175,7 @@ func BenchmarkGetLog(b *testing.B) {
 	}()
 
 	for n := 0; n < b.N; n++ {
-		store.StoreLogs([]*raft.Log{
+		_ = store.StoreLogs([]*raft.Log{
 			{
 				Index: uint64(n),
 				Term:  uint64(n),
@@ -187,6 +187,6 @@ func BenchmarkGetLog(b *testing.B) {
 
 	ralog := new(raft.Log)
 	for n := 0; n < b.N; n++ {
-		store.GetLog(uint64(n), ralog)
+		_ = store.GetLog(uint64(n), ralog)
 	}
 }

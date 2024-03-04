@@ -149,7 +149,7 @@ func setupTest(t *testing.T) (
 	}()
 
 	rootHTTP := internalhttp.NewH2Client(
-		internalhttp.WithTLS(rootClientCert, rootClientKey, caCert),
+		internalhttp.WithTLS(rootClientCert, rootClientKey, caCert, serverName),
 	)
 	rootClient = logv1connect.NewLogAPIClient(
 		rootHTTP,
@@ -158,7 +158,7 @@ func setupTest(t *testing.T) (
 	)
 
 	nobodyHTTP := internalhttp.NewH2Client(
-		internalhttp.WithTLS(nobodyClientCert, nobodyClientKey, caCert),
+		internalhttp.WithTLS(nobodyClientCert, nobodyClientKey, caCert, serverName),
 	)
 	nobodyClient = logv1connect.NewLogAPIClient(
 		nobodyHTTP,
